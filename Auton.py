@@ -1,7 +1,24 @@
-from vex import *
-from robot-config import *
 
-Drivetrain = DriveTrain(LeftMotor, RightMotor, 12.56, 12.5, DistanceUnits.INCHES)
+# ------------------------------------------
+# 
+# 	Project:      VEXcode Project
+#	Author:       VEX
+#	Created:
+#	Description:  VEXcode V5 Python Project
+# 
+# ------------------------------------------
+from vex import *
+
+brain = Brain()
+# create brain
+
+# --- Drivetrain Motors ---
+# This is for Port 3: Left side motor (False = not reversed)
+LeftMotor = Motor(Ports.PORT3, GearSetting.RATIO_18_1, False)
+# This is for Port 4: Right side motor (True = MUST be reversed for the robot to drive straight)
+RightMotor = Motor(Ports.PORT4, GearSetting.RATIO_18_1, True)
+
+Drivetrain = DriveTrain(LeftMotor, RightMotor, 12.56, 12.5, INCHES)
 
 # Intake/Conveyor System
 ConveyorBelt = Motor(Ports.PORT1, GearSetting.RATIO_18_1, False)
@@ -14,8 +31,22 @@ vision_sensor = Vision(Ports.PORT5) # Ensure this is the correct port
 # --- 3. VISION SIGNATURE SETUP ---
 # NOTE: You MUST train these signatures in the VEXcode V5 Utility first!
 # Assumes you have trained two signatures:
-BLOCK_SIG = vision_sensor.signatures.SIG_1  # For the Blocks
-GOAL_SIG = vision_sensor.signatures.SIG_2   # For the Goalpost structure
+BLOCK_SIG = Signature(
+    1,       # ID (must match 1)
+    5, 500,  # Hue and Hue Tolerance
+    75, 500, # Saturation and Saturation Tolerance
+    90, 500, # Brightness and Brightness Tolerance
+    1.5,     # Area (size filtering)
+    0        # Aspect Ratio (usually 0)
+)
+GOAL_SIG = Signature(
+    2,       # ID (must match 2)
+    40, 500, # Hue and Hue Tolerance for yellow/orange goal
+    85, 500, 
+    95, 500, 
+    1.5,
+    0
+)
 
 # --- 4. IMPROVED MOVEMENT AND ACTION FUNCTIONS ---
 
@@ -28,20 +59,27 @@ def turn_to_angle(angle_degrees, speed=40):
     """Turns accurately using the Inertial Sensor."""
     # Use the inertial sensor for precise turning
     Drivetrain.set_turn_velocity(speed, PERCENT)
-    Drivetrain.turn_to_heading(angle_degrees, DEGREES)
+    
+    # turn_for requires a direction (RIGHT or LEFT)
+    # If angle_degrees is positive, we turn Right. If negative, we turn Left.
+    if angle_degrees >= 0:
+        Drivetrain.turn_for(RIGHT, angle_degrees, DEGREES)
+    else:
+        # Use abs() to ensure the distance value passed is positive
+        Drivetrain.turn_for(LEFT, abs(angle_degrees), DEGREES)
 
 def drive_straight(distance_inches, speed=60):
     """Drives a specific distance precisely."""
     Drivetrain.set_drive_velocity(speed, PERCENT)
-    Drivetrain.drive_for(FWD, distance_inches, INCHES)
+    Drivetrain.drive_for(FORWARD, distance_inches, INCHES)
 
 def intake_blocks(duration_sec=1.5):
     """Runs the intake and conveyor system to collect blocks."""
     # Run both motors forward to collect
     Intake.set_velocity(100, PERCENT)
     ConveyorBelt.set_velocity(100, PERCENT)
-    Intake.spin(FWD)
-    ConveyorBelt.spin(FWD)
+    Intake.spin(FORWARD)
+    ConveyorBelt.spin(FORWARD)
     wait(duration_sec, SECONDS)
 
 def deposit_blocks(duration_sec=1.0):
@@ -49,8 +87,8 @@ def deposit_blocks(duration_sec=1.0):
     # Run both motors backward to score
     Intake.set_velocity(100, PERCENT)
     ConveyorBelt.set_velocity(100, PERCENT)
-    Intake.spin(REV)
-    ConveyorBelt.spin(REV)
+    Intake.spin(REVERSE)
+    ConveyorBelt.spin(REVERSE)
     wait(duration_sec, SECONDS)
     Intake.stop(BRAKE)
     ConveyorBelt.stop(BRAKE)
@@ -76,13 +114,13 @@ def vision_align(signature, target_x=158, drive_speed=15):
             if offset > 0:
                 # Turn Right
                 Drivetrain.stop(BRAKE)
-                LeftMotor.spin(FWD, turn_power, PERCENT)
-                RightMotor.spin(REV, turn_power, PERCENT)
+                LeftMotor.spin(FORWARD, turn_power, PERCENT)
+                RightMotor.spin(REVERSE, turn_power, PERCENT)
             else:
                 # Turn Left
                 Drivetrain.stop(BRAKE)
-                LeftMotor.spin(REV, turn_power, PERCENT)
-                RightMotor.spin(FWD, turn_power, PERCENT)
+                LeftMotor.spin(REVERSE, turn_power, PERCENT)
+                RightMotor.spin(FORWARD, turn_power, PERCENT)
                 
             wait(50, MSEC)
             vision_sensor.take_snapshot(signature)
@@ -111,7 +149,7 @@ def autonomous():
     turn_to_angle(90.0) 
     
     Drivetrain.set_drive_velocity(20, PERCENT)
-    Drivetrain.drive(FWD)
+    Drivetrain.drive(FORWARD)
     
     if vision_align(BLOCK_SIG, target_x=158, drive_speed=15):
         stop_drive()
