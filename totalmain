@@ -1,0 +1,81 @@
+# ------------------------------------------
+# Project:      VEXcode Project - Final Fix
+# Description:  VEXcode V5 Python Project
+# ------------------------------------------
+
+
+from vex import *
+
+
+# --- Robot Configuration ---
+brain = Brain()
+
+
+# Drivetrain
+LeftMotor = Motor(Ports.PORT1, GearSetting.RATIO_18_1, False)
+RightMotor = Motor(Ports.PORT2, GearSetting.RATIO_18_1, True)
+Drivetrain = DriveTrain(LeftMotor, RightMotor, 12.56, 12.5, DistanceUnits.IN)
+
+
+# Existing Motors
+ConveyorBelt = Motor(Ports.PORT3, GearSetting.RATIO_18_1, False)
+IntakeMain = Motor(Ports.PORT4, GearSetting.RATIO_18_1, False)
+
+
+# NEW: Intake Motor on Port 5 (Controlled by L1/L2)
+IntakePortD = Motor(Ports.PORT5, GearSetting.RATIO_18_1, False)
+
+
+Controller1 = Controller()
+
+
+# --- Functions ---
+
+
+def autonomous():
+    pass
+
+
+def user_control():
+    # Set stopping modes
+    Drivetrain.set_stopping(BrakeType.BRAKE)
+    ConveyorBelt.set_stopping(BrakeType.HOLD)
+    IntakeMain.set_stopping(BrakeType.HOLD)
+    IntakePortD.set_stopping(BrakeType.HOLD)
+
+
+    mech_speed = 200
+
+
+    while True:
+        # Arcade Drive
+        throttle = Controller1.axis3.position()
+        steering = Controller1.axis1.position()
+        LeftMotor.spin(FORWARD, throttle + steering, PERCENT)
+        RightMotor.spin(FORWARD, throttle - steering, PERCENT)
+
+
+        # Original Intake/Conveyor (R1/R2)
+        if Controller1.buttonR1.pressing():
+            ConveyorBelt.spin(FORWARD, mech_speed, PERCENT)
+        elif Controller1.buttonR2.pressing():
+            ConveyorBelt.spin(REVERSE, mech_speed, PERCENT)
+        else:
+            IntakeMain.stop()
+            ConveyorBelt.stop()
+
+
+        # NEW: Port D Intake Control (L1/L2)
+        if Controller1.buttonL1.pressing():
+            IntakeMain.spin(FORWARD, mech_speed, PERCENT)
+        elif Controller1.buttonL2.pressing():
+            IntakeMain.spin(REVERSE, mech_speed, PERCENT)
+        else:
+            IntakePortD.stop()
+
+
+        wait(20, MSEC)
+
+
+# Main Execution
+competition = Competition(user_control, autonomous)
