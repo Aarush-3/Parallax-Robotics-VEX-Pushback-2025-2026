@@ -31,8 +31,8 @@ Controller1 = Controller()
 # --- Helper Functions ---
 
 def run_intake(speed_pct, duration_ms=0):
-    IntakeMain.psin(FORWARD, speed_pct, PERCENT)
-    IntakePortD.spin(FORWARD, speec_pct, PERCENT)
+    IntakeMain.spin(FORWARD, speed_pct, PERCENT)
+    IntakePortD.spin(FORWARD, speed_pct, PERCENT)
     ConveyorBelt.spin(FORWARD, speed_pct, PERCENT)
     if duration_ms > 0:
         wait(duration_ms, MSEC)
@@ -40,7 +40,7 @@ def run_intake(speed_pct, duration_ms=0):
 def stop_intake():
     IntakeMain.stop(BrakeType.HOLD)
     IntakePortD.stop(BrakeType.HOLD)
-    ConveyerBelt.stop(BrakeType.HOLD)
+    ConveyorBelt.stop(BrakeType.HOLD)
 
 def score_sequence():
     IntakeMain.spin(REVERSE, 100, PERCENT)
@@ -60,8 +60,8 @@ def autonomous():
     Drivetrain.turn_for(RIGHT, 90, DEGREES)
     run_intake(100)
     Drivetrain.drive_for(FORWARD, 24, INCHES)
-    Drivetrain.turn_for(LEFT, 45, INCHES)
-    Drivetrain.drive_for(FORWARD, 20 INCHES)
+    Drivetrain.turn_for(LEFT, 45, DEGREES)
+    Drivetrain.drive_for(FORWARD, 20, INCHES)
     score_sequence()
     Drivetrain.drive_for(REVERSE, 5, INCHES)
     stop_intake()
@@ -75,7 +75,7 @@ def user_control():
     IntakePortD.set_stopping(BrakeType.HOLD)
 
 
-    mech_speed = 200
+    mech_speed = 100
 
 
     while True:
