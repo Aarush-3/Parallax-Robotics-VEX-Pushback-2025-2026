@@ -1,7 +1,8 @@
 # ------------------------------------------
 # V5RC Push Back — 60s Skills Autonomous
-# Strategy: Center + Scrap Cycles
-# Sensors: Inertial + Distance
+# Inertial: CENTER-mounted, flat, X-axis arrow FORWARD
+# Distance Sensor: REAR-mounted
+# Robot Length: 18 inches
 # ------------------------------------------
 
 from vex import *
@@ -25,13 +26,7 @@ IntakePortD  = Motor(Ports.PORT5, GearSetting.RATIO_18_1, False)
 inertial_sensor = Inertial(Ports.PORT8)
 dist_sensor     = Distance(Ports.PORT9)
 
-# ---------------- Random Seed ----------------
-def initializeRandomSeed():
-    wait(100, MSEC)
-    r = brain.battery.voltage(MV) + brain.battery.current(CurrentUnits.AMP) * 100
-    urandom.seed(int(r))
-
-initializeRandomSeed()
+ROBOT_LENGTH_IN = 18.0
 
 # ---------------- Intake Helpers ----------------
 def intake_on():
@@ -52,10 +47,6 @@ def score(duration_ms=1800):
     intake_off()
 
 # ---------------- Motion Helpers ----------------
-def set_drive(speed=65, turn=45):
-    Drivetrain.set_drive_velocity(speed, PERCENT)
-    Drivetrain.set_turn_velocity(turn, PERCENT)
-
 def wrap180(angle):
     while angle >= 180:
         angle -= 360
@@ -63,60 +54,79 @@ def wrap180(angle):
         angle += 360
     return angle
 
-def turn_to(target, speed=35, timeout=2500):
+def turn_to(target_deg, speed=35, timeout_ms=2500):
+    """
+    Uses inertial.heading() — VALID because sensor is
+    centered, flat, arrow pointing forward.
+    """
     Drivetrain.set_turn_velocity(speed, PERCENT)
-    t = Timer()
-    t.reset()
+    timer = Timer()
+    timer.reset()
 
-    while t.time(MSEC) < timeout:
-        cur = inertial_sensor.heading(DEGREES)
-        err = wrap180(target - cur)
+    while timer.time(MSEC) < timeout_ms:
+        current = inertial_sensor.heading(DEGREES)
+        error = wrap180(target_deg - current)
 
-        if abs(err) < 2:
+        if abs(error) <= 2:
             Drivetrain.stop(BRAKE)
             return
 
-        if err > 0:
-            Drivetrain.turn_for(RIGHT, min(abs(err), 10), DEGREES)
+        step = min(abs(error), 10)
+        if error > 0:
+            Drivetrain.turn_for(RIGHT, step, DEGREES)
         else:
-            Drivetrain.turn_for(LEFT, min(abs(err), 10), DEGREES)
+            Drivetrain.turn_for(LEFT, step, DEGREES)
 
         wait(10, MSEC)
 
     Drivetrain.stop(BRAKE)
 
-def drive_until(max_inches, stop_dist=4.0, speed=45):
+def reverse_until_front_clearance(front_clear_in=3.5, max_reverse_in=24, speed=40):
+    """
+    Uses REAR-mounted distance sensor.
+    Stops when FRONT of robot is front_clear_in inches
+    from the goal.
+    """
     Drivetrain.set_drive_velocity(speed, PERCENT)
-    traveled = 0
+    reversed_dist = 0
 
-    while traveled < max_inches:
-        d = dist_sensor.object_distance(INCHES)
-        if d > 0 and d <= stop_dist:
-            Drivetrain.stop(BRAKE)
-            return
+    while reversed_dist < max_reverse_in:
+        rear_dist = dist_sensor.object_distance(INCHES)
 
-        Drivetrain.drive_for(FORWARD, 2, INCHES)
-        traveled += 2
+        if rear_dist > 0:
+            front_clearance = rear_dist - ROBOT_LENGTH_IN
+            if front_clearance <= front_clear_in:
+                Drivetrain.stop(BRAKE)
+                return
+
+        Drivetrain.drive_for(REVERSE, 2, INCHES)
+        reversed_dist += 2
         wait(5, MSEC)
 
-# ---------------- Autonomous ----------------
+    Drivetrain.stop(BRAKE)
+
+# ---------------- Autonomous (60s Skills) ----------------
 def autonomous():
 
+    # Inertial calibration
     inertial_sensor.calibrate()
     while inertial_sensor.is_calibrating():
         wait(25, MSEC)
+
     inertial_sensor.set_heading(0, DEGREES)
 
     Drivetrain.set_stopping(BRAKE)
-    set_drive()
+    Drivetrain.set_drive_velocity(65, PERCENT)
+    Drivetrain.set_turn_velocity(45, PERCENT)
 
     start_time = brain.timer.time(SECONDS)
 
-    # ---------- SKILLS LOOP ----------
+    # --------- Skills Loop (~16–18s per cycle) ---------
     while brain.timer.time(SECONDS) - start_time < 58:
 
-        # --- Go to center ---
         intake_on()
+
+        # Drive to center
         turn_to(0)
         Drivetrain.drive_for(FORWARD, 30, INCHES)
 
@@ -128,20 +138,18 @@ def autonomous():
         turn_to(335)
         Drivetrain.drive_for(FORWARD, 14, INCHES)
 
-        # Return heading
+        # Return to goal lane
         turn_to(0)
-
-        # --- Return to goal ---
         Drivetrain.drive_for(REVERSE, 32, INCHES)
 
-        # Final approach using distance sensor
-        drive_until(22, stop_dist=3.5)
+        # Controlled final reverse to goal
+        reverse_until_front_clearance(front_clear_in=3.5)
 
         # Score
         score(1800)
 
-        # Back out
-        Drivetrain.drive_for(REVERSE, 10, INCHES)
+        # Reset
+        Drivetrain.drive_for(FORWARD, 10, INCHES)
         intake_off()
 
     Drivetrain.stop(BRAKE)
