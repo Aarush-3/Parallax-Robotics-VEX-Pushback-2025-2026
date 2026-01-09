@@ -1,0 +1,244 @@
+# ------------------------------------------
+# Project:      V5RC Push Back - Center & Scrap Blocks Auton (FINAL FILE)
+# Description:  VEXcode V5 Python Project (Inertial + Distance Sensor)
+# Notes:
+#  - Strategy: Collect center blocks + nearby scrap blocks, then score into your near (alliance-side) goal.
+#  - Uses ONLY valid VEX V5 Python APIs.
+#  - Distances are based on field-tile geometry (24" tiles) + safe margins.
+#  - You MUST do final 1–3" tuning for your robot’s intake/bumper offsets.
+# ------------------------------------------
+
+from vex import *
+import urandom
+
+# ---------------- Brain / Controller ----------------
+brain = Brain()
+Controller1 = Controller()
+
+# ---------------- Drivetrain ----------------
+LeftMotor  = Motor(Ports.PORT1, GearSetting.RATIO_18_1, False)
+RightMotor = Motor(Ports.PORT2, GearSetting.RATIO_18_1, True)
+Drivetrain = DriveTrain(LeftMotor, RightMotor, 12.56, 12.5, DistanceUnits.IN)
+
+# ---------------- Mechanisms ----------------
+ConveyorBelt = Motor(Ports.PORT3, GearSetting.RATIO_18_1, False)
+IntakeMain   = Motor(Ports.PORT4, GearSetting.RATIO_18_1, False)
+IntakePortD  = Motor(Ports.PORT5, GearSetting.RATIO_18_1, False)
+
+# ---------------- Sensors ----------------
+inertial_sensor = Inertial(Ports.PORT8)
+dist_sensor     = Distance(Ports.PORT9)
+
+# ---------------- Random Seed (safe) ----------------
+def initializeRandomSeed():
+    wait(100, MSEC)
+    r = brain.battery.voltage(MV) + brain.battery.current(CurrentUnits.AMP) * 100 + brain.timer.system_high_res()
+    urandom.seed(int(r))
+
+initializeRandomSeed()
+
+# ---------------- Helper: Intake ----------------
+def run_intake(speed_pct=100):
+    IntakeMain.spin(FORWARD, speed_pct, PERCENT)
+    IntakePortD.spin(FORWARD, speed_pct, PERCENT)
+    ConveyorBelt.spin(FORWARD, speed_pct, PERCENT)
+
+def stop_intake():
+    IntakeMain.stop(BrakeType.HOLD)
+    IntakePortD.stop(BrakeType.HOLD)
+    ConveyorBelt.stop(BrakeType.HOLD)
+
+def score_reverse(duration_ms=1500):
+    IntakeMain.spin(REVERSE, 100, PERCENT)
+    IntakePortD.spin(REVERSE, 100, PERCENT)
+    ConveyorBelt.spin(REVERSE, 100, PERCENT)
+    wait(duration_ms, MSEC)
+    stop_intake()
+
+# ---------------- Helper: Motion ----------------
+def set_drive(speed_pct=65, turn_pct=45):
+    Drivetrain.set_drive_velocity(speed_pct, PERCENT)
+    Drivetrain.set_turn_velocity(turn_pct, PERCENT)
+
+def _angle_wrap_180(deg):
+    # Wrap to [-180, 180)
+    while deg >= 180:
+        deg -= 360
+    while deg < -180:
+        deg += 360
+    return deg
+
+def turn_to_heading(target_deg, max_time_ms=2500, min_err_deg=2.0, turn_speed_pct=35):
+    """
+    Uses inertial heading to turn to an absolute heading (0-359).
+    Works with VEX V5 Inertial.heading(DEGREES) which returns 0..359.
+    """
+    Drivetrain.set_turn_velocity(turn_speed_pct, PERCENT)
+    t = Timer()
+    t.reset()
+
+    while t.time(MSEC) < max_time_ms:
+        cur = inertial_sensor.heading(DEGREES)
+        err = _angle_wrap_180(target_deg - cur)
+
+        if abs(err) <= min_err_deg:
+            Drivetrain.stop(BRAKE)
+            return True
+
+        if err > 0:
+            Drivetrain.turn_for(RIGHT, min(abs(err), 12), DEGREES)  # small chunks = stable
+        else:
+            Drivetrain.turn_for(LEFT, min(abs(err), 12), DEGREES)
+
+        wait(10, MSEC)
+
+    Drivetrain.stop(BRAKE)
+    return False
+
+def drive_for_inches(direction, inches, speed_pct=60):
+    Drivetrain.set_drive_velocity(speed_pct, PERCENT)
+    Drivetrain.drive_for(direction, inches, INCHES)
+
+def drive_until_object(max_inches, stop_dist_in=4.0, direction=FORWARD, speed_pct=45, step_in=2.0):
+    """
+    Drives up to max_inches, stopping early if the distance sensor sees an object closer than stop_dist_in.
+    Uses small drive_for() steps for API reliability.
+    """
+    Drivetrain.set_drive_velocity(speed_pct, PERCENT)
+    driven = 0.0
+
+    while driven < max_inches:
+        d = dist_sensor.object_distance(INCHES)
+
+        # Some readings can be 0 when nothing is detected; treat 0 as "no reliable object"
+        if d > 0 and d <= stop_dist_in:
+            Drivetrain.stop(BRAKE)
+            return True
+
+        step = step_in
+        if driven + step > max_inches:
+            step = max_inches - driven
+
+        Drivetrain.drive_for(direction, step, INCHES)
+        driven += step
+        wait(5, MSEC)
+
+    Drivetrain.stop(BRAKE)
+    return False
+
+# ---------------- Autonomous Constants (Field-tile aware) ----------------
+# Tiles are 24"; center cluster is roughly ~30-36" from a typical start depending on exact start tile.
+CENTER_APPROACH_IN      = 32.0   # drive into the center region (field-geometry based, safe margin)
+CENTER_SWEEP_LEG_IN     = 14.0   # sweep legs to grab scraps near center
+RETURN_TO_GOAL_IN       = 32.0   # return toward near goal area (tune)
+GOAL_FINAL_APPROACH_IN  = 24.0   # last approach toward goal; distance sensor will stop early
+
+# Headings assume you start facing "0°" as in official appendix orientation
+START_HEADING_DEG       = 0.0
+
+# ---------------- Autonomous Routine ----------------
+def autonomous():
+    # Sensor calibration
+    inertial_sensor.calibrate()
+    while inertial_sensor.is_calibrating():
+        wait(25, MSEC)
+    inertial_sensor.set_heading(START_HEADING_DEG, DEGREES)
+
+    # Stopping modes
+    Drivetrain.set_stopping(BRAKE)
+    IntakeMain.set_stopping(HOLD)
+    IntakePortD.set_stopping(HOLD)
+    ConveyorBelt.set_stopping(HOLD)
+
+    # Speeds
+    set_drive(speed_pct=65, turn_pct=45)
+
+    # ---------------- Phase 1: Go to Center & Intake ----------------
+    run_intake(100)
+
+    # Drive toward center (tile-geometry based)
+    turn_to_heading(START_HEADING_DEG, turn_speed_pct=35)
+    drive_for_inches(FORWARD, CENTER_APPROACH_IN, speed_pct=55)
+
+    # If we are about to hit something in center (block/center structure), back up a touch
+    d = dist_sensor.object_distance(INCHES)
+    if d > 0 and d < 4.0:
+        drive_for_inches(REVERSE, 3.0, speed_pct=40)
+
+    # ---------------- Phase 2: Sweep for center + scrap blocks ----------------
+    # Sweep right
+    turn_to_heading(30, turn_speed_pct=35)
+    drive_for_inches(FORWARD, CENTER_SWEEP_LEG_IN, speed_pct=45)
+
+    # Sweep left across center
+    turn_to_heading(330, turn_speed_pct=35)
+    drive_for_inches(FORWARD, CENTER_SWEEP_LEG_IN, speed_pct=45)
+
+    # Re-center heading
+    turn_to_heading(START_HEADING_DEG, turn_speed_pct=35)
+
+    # ---------------- Phase 3: Return to Near Goal & Score ----------------
+    # Return back toward your near goal lane (tune RETURN_TO_GOAL_IN based on your start tile)
+    drive_for_inches(REVERSE, RETURN_TO_GOAL_IN, speed_pct=60)
+
+    # Face goal (still 0° in this baseline). If your near goal requires a different heading, change here.
+    turn_to_heading(START_HEADING_DEG, turn_speed_pct=35)
+
+    # Final approach with distance sensor safety (stop when close)
+    # This prevents slamming the goal and keeps scoring consistent.
+    drive_until_object(
+        max_inches=GOAL_FINAL_APPROACH_IN,
+        stop_dist_in=3.5,
+        direction=FORWARD,
+        speed_pct=40,
+        step_in=2.0
+    )
+
+    # Score / eject into goal
+    score_reverse(2000)
+
+    # Back out & stop
+    drive_for_inches(REVERSE, 10.0, speed_pct=50)
+    stop_intake()
+    Drivetrain.stop(BRAKE)
+
+# ---------------- Driver Control ----------------
+def user_control():
+    # Set stopping modes
+    Drivetrain.set_stopping(BrakeType.BRAKE)
+    ConveyorBelt.set_stopping(BrakeType.HOLD)
+    IntakeMain.set_stopping(BrakeType.HOLD)
+    IntakePortD.set_stopping(BrakeType.HOLD)
+
+    mech_speed = 100  # percent (max 100)
+
+    while True:
+        # Arcade Drive
+        throttle = Controller1.axis3.position()
+        steering = Controller1.axis1.position()
+        LeftMotor.spin(FORWARD, throttle + steering, PERCENT)
+        RightMotor.spin(FORWARD, throttle - steering, PERCENT)
+
+        # Conveyor (R1 forward / R2 reverse)
+        if Controller1.buttonR1.pressing():
+            ConveyorBelt.spin(FORWARD, mech_speed, PERCENT)
+        elif Controller1.buttonR2.pressing():
+            ConveyorBelt.spin(REVERSE, mech_speed, PERCENT)
+        else:
+            ConveyorBelt.stop()
+
+        # IntakeMain + IntakePortD (L1 forward / L2 reverse)
+        if Controller1.buttonL1.pressing():
+            IntakeMain.spin(FORWARD, mech_speed, PERCENT)
+            IntakePortD.spin(FORWARD, mech_speed, PERCENT)
+        elif Controller1.buttonL2.pressing():
+            IntakeMain.spin(REVERSE, mech_speed, PERCENT)
+            IntakePortD.spin(REVERSE, mech_speed, PERCENT)
+        else:
+            IntakeMain.stop()
+            IntakePortD.stop()
+
+        wait(20, MSEC)
+
+# ---------------- Competition ----------------
+competition = Competition(user_control, autonomous)
