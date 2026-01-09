@@ -1,129 +1,140 @@
-# ------------------------------------------
-# Project:      VEXcode Project - Fixed Autonomous
-# Description:  VEXcode V5 Python Project
-# ------------------------------------------
+#region VEXcode Generated Robot Configuration
 from vex import *
+import urandom
+import math
 
+# Brain should be defined by default
+brain=Brain()
+
+# Robot configuration code
+
+
+# wait for rotation sensor to fully initialize
+wait(30, MSEC)
+
+
+# Make random actually random
+def initializeRandomSeed():
+    wait(100, MSEC)
+    random = brain.battery.voltage(MV) + brain.battery.current(CurrentUnits.AMP) * 100 + brain.timer.system_high_res()
+    urandom.seed(int(random))
+      
+# Set random seed 
+initializeRandomSeed()
+
+
+def play_vexcode_sound(sound_name):
+    # Helper to make playing sounds from the V5 in VEXcode easier and
+    # keeps the code cleaner by making it clear what is happening.
+    print("VEXPlaySound:" + sound_name)
+    wait(5, MSEC)
+
+# add a small delay to make sure we don't print in the middle of the REPL header
+wait(200, MSEC)
+# clear the console to make sure we don't have the REPL in the console
+print("\033[2J")
+
+#endregion VEXcode Generated Robot Configuration
+
+# ------------------------------------------
+# 
+# 	Project:      VEXcode Project
+#	Author:       VEX
+#	Created:
+#	Description:  VEXcode V5 Python Project
+# 
+# ------------------------------------------
+
+# Library imports
+from vex import *
+# ------------------------------------------
+# Project: V5 Push Back - Center Field Auton
+# Strategy: Drive to center, intake balls, push to goal
+# ------------------------------------------
+
+# --- Hardware Configuration (Aligned with totalmain1) ---
 brain = Brain()
-
-# --- Drivetrain Motors ---
-LeftMotor = Motor(Ports.PORT3, GearSetting.RATIO_18_1, False)
-RightMotor = Motor(Ports.PORT4, GearSetting.RATIO_18_1, True)
-
-# FIX 1: Changed 'INCHES' to 'DistanceUnits.IN'
+LeftMotor = Motor(Ports.PORT1, GearSetting.RATIO_18_1, False)
+RightMotor = Motor(Ports.PORT2, GearSetting.RATIO_18_1, True)
 Drivetrain = DriveTrain(LeftMotor, RightMotor, 12.56, 12.5, DistanceUnits.IN)
 
-# Intake/Conveyor System
-ConveyorBelt = Motor(Ports.PORT1, GearSetting.RATIO_18_1, False)
-Intake = Motor(Ports.PORT2, GearSetting.RATIO_18_1, False)
+ConveyorBelt = Motor(Ports.PORT3, GearSetting.RATIO_18_1, False)
+IntakeMain = Motor(Ports.PORT4, GearSetting.RATIO_18_1, False)
+IntakePortD = Motor(Ports.PORT5, GearSetting.RATIO_18_1, False)
 
 # Sensors
 inertial_sensor = Inertial(Ports.PORT8)
-vision_sensor = Vision(Ports.PORT5)
+# Distance sensor (assuming Port 9 based on your requirement)
+dist_sensor = Distance(Ports.PORT9) 
 
-# --- Vision Signature Setup ---
-BLOCK_SIG = Signature(1, 5, 500, 75, 500, 90, 500, 1.5, 0)
-GOAL_SIG = Signature(2, 40, 500, 85, 500, 95, 500, 1.5, 0)
+# --- Helper Functions ---
 
-# --- Movement and Action Functions ---
+def run_intake(speed_pct=100):
+    IntakeMain.spin(FORWARD, speed_pct, PERCENT)
+    IntakePortD.spin(FORWARD, speed_pct, PERCENT)
+    ConveyorBelt.spin(FORWARD, speed_pct, PERCENT)
 
-def set_drive_speed(speed=60):
-    Drivetrain.set_drive_velocity(speed, PERCENT)
-    Drivetrain.set_turn_velocity(speed * 0.7, PERCENT)
+def stop_intake():
+    IntakeMain.stop(BrakeType.HOLD)
+    IntakePortD.stop(BrakeType.HOLD)
+    ConveyorBelt.stop(BrakeType.HOLD)
 
-def turn_to_angle(angle_degrees, speed=40):
-    Drivetrain.set_turn_velocity(speed, PERCENT)
-    # FIX 2: Corrected direction constants to RIGHT/LEFT
-    if angle_degrees >= 0:
-        Drivetrain.turn_for(RIGHT, angle_degrees, DEGREES)
-    else:
-        Drivetrain.turn_for(LEFT, abs(angle_degrees), DEGREES)
+def score_reverse(duration_ms=1500):
+    IntakeMain.spin(REVERSE, 100, PERCENT)
+    IntakePortD.spin(REVERSE, 100, PERCENT)
+    ConveyorBelt.spin(REVERSE, 100, PERCENT)
+    wait(duration_ms, MSEC)
+    stop_intake()
 
-def drive_straight(distance_inches, speed=60):
-    Drivetrain.set_drive_velocity(speed, PERCENT)
-    # FIX 3: VEX drive_for logic: Use FORWARD with positive/negative numbers
-    Drivetrain.drive_for(FORWARD, distance_inches, DistanceUnits.IN)
-
-def intake_blocks(duration_sec=1.5):
-    Intake.set_velocity(100, PERCENT)
-    ConveyorBelt.set_velocity(100, PERCENT)
-    Intake.spin(FORWARD)
-    ConveyorBelt.spin(FORWARD)
-    wait(duration_sec, SECONDS)
-    Intake.stop()
-    ConveyorBelt.stop()
-
-def deposit_blocks(duration_sec=1.0):
-    Intake.set_velocity(100, PERCENT)
-    ConveyorBelt.set_velocity(100, PERCENT)
-    Intake.spin(REVERSE)
-    ConveyorBelt.spin(REVERSE)
-    wait(duration_sec, SECONDS)
-    Intake.stop(BRAKE)
-    ConveyorBelt.stop(BRAKE)
-
-def stop_drive():
-    Drivetrain.stop(BRAKE)
-
-def vision_align(signature, target_x=158, drive_speed=15):
-    vision_sensor.take_snapshot(signature)
-    if vision_sensor.object_count > 0:
-        obj = vision_sensor.largest_object()
-        offset = obj.centerX - target_x
-        while abs(offset) > 5:
-            turn_power = max(10, min(30, abs(offset) / 5)) 
-            if offset > 0:
-                LeftMotor.spin(FORWARD, turn_power, PERCENT)
-                RightMotor.spin(REVERSE, turn_power, PERCENT)
-            else:
-                LeftMotor.spin(REVERSE, turn_power, PERCENT)
-                RightMotor.spin(FORWARD, turn_power, PERCENT)
-            wait(50, MSEC)
-            vision_sensor.take_snapshot(signature)
-            if vision_sensor.object_count == 0:
-                stop_drive()
-                return False
-            obj = vision_sensor.largest_object()
-            offset = obj.centerX - target_x
-        stop_drive()
-        return True
-    return False
-
-# --- THE AUTONOMOUS ROUTINE ---
+# --- Autonomous Routine ---
 
 def autonomous():
+    # 1. Sensor Calibration
     inertial_sensor.calibrate()
-    print("Calibrating Inertial Sensor...")
     while inertial_sensor.is_calibrating():
         wait(25, MSEC)
-    inertial_sensor.set_heading(0.0, DEGREES) 
     
-    set_drive_speed(60)
-    drive_straight(12.0, speed=50) 
-    deposit_blocks(1.5)             
-    drive_straight(-4.0, speed=50) 
-    turn_to_angle(90.0) 
+    # 2. Setup
+    Drivetrain.set_drive_velocity(70, PERCENT)
+    Drivetrain.set_turn_velocity(50, PERCENT)
     
-    if vision_align(BLOCK_SIG, target_x=158, drive_speed=15):
-        obj = vision_sensor.largest_object()
-        distance_to_drive = 10 - (obj.width / 20) 
-        drive_straight(distance_to_drive, speed=30) 
-        intake_blocks(1.0)
+    # 3. Drive to Center (Adjust 24-30 inches based on starting position)
+    # Start intake early to catch balls in the middle
+    run_intake(100)
+    Drivetrain.drive_for(FORWARD, 28, INCHES)
     
-    turn_to_angle(0.0) 
+    # 4. Use Distance Sensor to find or avoid the center barrier/balls
+    if dist_sensor.object_distance(INCHES) < 4:
+        # Small adjustment if too close to an object
+        Drivetrain.drive_for(REVERSE, 2, INCHES)
+    
+    # 5. Sweep for more balls
+    Drivetrain.turn_for(RIGHT, 30, DEGREES)
+    Drivetrain.drive_for(FORWARD, 10, INCHES)
+    Drivetrain.turn_for(LEFT, 60, DEGREES)
+    
+    # 6. Drive toward the scoring zone (Goal)
+    # Adjust heading back toward your target goal
+    Drivetrain.turn_for(RIGHT, 30, DEGREES) 
+    Drivetrain.drive_for(FORWARD, 15, INCHES)
+    
+    # 7. Release/Push balls into scoring area
+    score_reverse(2000)
+    
+    # 8. Reset to clear the area
+    Drivetrain.drive_for(REVERSE, 10, INCHES)
+    stop_intake()
 
-    if vision_align(GOAL_SIG, target_x=158, drive_speed=15):
-        drive_straight(30.0, speed=40) 
-        deposit_blocks(1.5)           
-
-    turn_to_angle(270.0)
-    drive_straight(40.0, speed=60) 
-    Drivetrain.stop(HOLD)
-
-# --- DRIVER CONTROL (Required for Competition) ---
+# --- Competition Setup ---
+# user_control logic from totalmain1 remains the same
 def user_control():
+    Drivetrain.set_stopping(BrakeType.BRAKE)
     while True:
+        throttle = Controller1.axis3.position()
+        steering = Controller1.axis1.position()
+        LeftMotor.spin(FORWARD, throttle + steering, PERCENT)
+        RightMotor.spin(FORWARD, throttle - steering, PERCENT)
+        # ... (Rest of your controller logic)
         wait(20, MSEC)
 
-# FIX 4: Correct Competition Initialization
 competition = Competition(user_control, autonomous)
