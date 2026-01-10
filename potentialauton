@@ -1,162 +1,106 @@
 # ------------------------------------------
-# V5RC Push Back — 60s Skills Autonomous
-# Inertial: CENTER-mounted, flat, X-axis arrow FORWARD
-# Distance Sensor: REAR-mounted
-# Robot Length: 18 inches
+# V5RC Push Back — Skills (Updated Dimensions)
+# Robot Length: 17.5 inches
+# Sensor: REAR-mounted Distance
 # ------------------------------------------
 
 from vex import *
-import urandom
 
-# ---------------- Brain / Controller ----------------
+# --- 1. DEVICE CONFIGURATION ---
 brain = Brain()
-Controller1 = Controller()
 
-# ---------------- Drivetrain ----------------
 LeftMotor  = Motor(Ports.PORT1, GearSetting.RATIO_18_1, False)
 RightMotor = Motor(Ports.PORT2, GearSetting.RATIO_18_1, True)
 Drivetrain = DriveTrain(LeftMotor, RightMotor, 12.56, 12.5, DistanceUnits.IN)
 
-# ---------------- Mechanisms ----------------
 ConveyorBelt = Motor(Ports.PORT3, GearSetting.RATIO_18_1, False)
 IntakeMain   = Motor(Ports.PORT4, GearSetting.RATIO_18_1, False)
-IntakePortD  = Motor(Ports.PORT5, GearSetting.RATIO_18_1, False)
+IntakePort5  = Motor(Ports.PORT5, GearSetting.RATIO_18_1, False)
 
-# ---------------- Sensors ----------------
 inertial_sensor = Inertial(Ports.PORT8)
 dist_sensor     = Distance(Ports.PORT9)
 
-ROBOT_LENGTH_IN = 18.0
+ROBOT_LENGTH_IN = 17.5 
 
-# ---------------- Intake Helpers ----------------
+Controller1 = Controller()
+
+# --- 2. MOVEMENT HELPERS ---
+
 def intake_on():
     IntakeMain.spin(FORWARD, 100, PERCENT)
-    IntakePortD.spin(FORWARD, 100, PERCENT)
+    IntakePort5.spin(FORWARD, 100, PERCENT)
     ConveyorBelt.spin(FORWARD, 100, PERCENT)
 
 def intake_off():
     IntakeMain.stop(HOLD)
-    IntakePortD.stop(HOLD)
+    IntakePort5.stop(HOLD)
     ConveyorBelt.stop(HOLD)
 
-def score(duration_ms=1800):
-    IntakeMain.spin(REVERSE, 100, PERCENT)
-    IntakePortD.spin(REVERSE, 100, PERCENT)
-    ConveyorBelt.spin(REVERSE, 100, PERCENT)
-    wait(duration_ms, MSEC)
-    intake_off()
-
-# ---------------- Motion Helpers ----------------
-def wrap180(angle):
-    while angle >= 180:
-        angle -= 360
-    while angle < -180:
-        angle += 360
-    return angle
-
-def turn_to(target_deg, speed=35, timeout_ms=2500):
+def reverse_until_front_clearance(front_target_in=3.5):
     """
-    Uses inertial.heading() — VALID because sensor is
-    centered, flat, arrow pointing forward.
+    Stops the robot based on the new 17.5" length.
+    Threshold = 3.5 + 17.5 = 21.0 inches from the rear sensor.
     """
-    Drivetrain.set_turn_velocity(speed, PERCENT)
-    timer = Timer()
-    timer.reset()
-
-    while timer.time(MSEC) < timeout_ms:
-        current = inertial_sensor.heading(DEGREES)
-        error = wrap180(target_deg - current)
-
-        if abs(error) <= 2:
+    Drivetrain.set_drive_velocity(30, PERCENT)
+    
+    # The math updates automatically here
+    rear_stop_threshold = front_target_in + ROBOT_LENGTH_IN
+    
+    Drivetrain.drive(REVERSE)
+    while True:
+        if dist_sensor.object_distance(DistanceUnits.IN) >= rear_stop_threshold:
             Drivetrain.stop(BRAKE)
-            return
-
-        step = min(abs(error), 10)
-        if error > 0:
-            Drivetrain.turn_for(RIGHT, step, DEGREES)
-        else:
-            Drivetrain.turn_for(LEFT, step, DEGREES)
-
+            break
         wait(10, MSEC)
 
-    Drivetrain.stop(BRAKE)
+# --- 3. THE 60-SECOND SKILLS ROUTINE ---
 
-def reverse_until_front_clearance(front_clear_in=3.5, max_reverse_in=24, speed=40):
-    """
-    Uses REAR-mounted distance sensor.
-    Stops when FRONT of robot is front_clear_in inches
-    from the goal.
-    """
-    Drivetrain.set_drive_velocity(speed, PERCENT)
-    reversed_dist = 0
-
-    while reversed_dist < max_reverse_in:
-        rear_dist = dist_sensor.object_distance(INCHES)
-
-        if rear_dist > 0:
-            front_clearance = rear_dist - ROBOT_LENGTH_IN
-            if front_clearance <= front_clear_in:
-                Drivetrain.stop(BRAKE)
-                return
-
-        Drivetrain.drive_for(REVERSE, 2, INCHES)
-        reversed_dist += 2
-        wait(5, MSEC)
-
-    Drivetrain.stop(BRAKE)
-
-# ---------------- Autonomous (60s Skills) ----------------
 def autonomous():
-
-    # Inertial calibration
+    # Calibration
     inertial_sensor.calibrate()
     while inertial_sensor.is_calibrating():
         wait(25, MSEC)
-
-    inertial_sensor.set_heading(0, DEGREES)
-
-    Drivetrain.set_stopping(BRAKE)
-    Drivetrain.set_drive_velocity(65, PERCENT)
-    Drivetrain.set_turn_velocity(45, PERCENT)
-
+    
+    # Slant correction (4.5 degrees left)
+    inertial_sensor.set_heading(-4.5, DEGREES)
+    wait(1, SECONDS)
+    
     start_time = brain.timer.time(SECONDS)
 
-    # --------- Skills Loop (~16–18s per cycle) ---------
     while brain.timer.time(SECONDS) - start_time < 58:
-
         intake_on()
 
-        # Drive to center
-        turn_to(0)
-        Drivetrain.drive_for(FORWARD, 30, INCHES)
+        # Align to center
+        Drivetrain.turn_to_heading(0, DEGREES) 
+        
+        # Drive to balls
+        Drivetrain.drive_for(FORWARD, 30, DistanceUnits.IN)
+        
+        # Sweep maneuvers
+        Drivetrain.turn_to_heading(25, DEGREES)
+        Drivetrain.drive_for(FORWARD, 12, DistanceUnits.IN)
+        Drivetrain.turn_to_heading(335, DEGREES)
+        Drivetrain.drive_for(FORWARD, 12, DistanceUnits.IN)
 
-        # Sweep right scrap
-        turn_to(25)
-        Drivetrain.drive_for(FORWARD, 14, INCHES)
-
-        # Sweep left scrap
-        turn_to(335)
-        Drivetrain.drive_for(FORWARD, 14, INCHES)
-
-        # Return to goal lane
-        turn_to(0)
-        Drivetrain.drive_for(REVERSE, 32, INCHES)
-
-        # Controlled final reverse to goal
-        reverse_until_front_clearance(front_clear_in=3.5)
+        # Return and Score
+        Drivetrain.turn_to_heading(0, DEGREES)
+        Drivetrain.drive_for(REVERSE, 24, DistanceUnits.IN)
+        
+        # Uses the new 17.5" logic to find the goal
+        reverse_until_front_clearance(3.5)
 
         # Score
-        score(1800)
-
-        # Reset
-        Drivetrain.drive_for(FORWARD, 10, INCHES)
+        IntakeMain.spin(REVERSE, 100, PERCENT)
+        IntakePort5.spin(REVERSE, 100, PERCENT)
+        ConveyorBelt.spin(REVERSE, 100, PERCENT)
+        wait(1.8, SECONDS)
         intake_off()
 
-    Drivetrain.stop(BRAKE)
+        # Reset
+        Drivetrain.drive_for(FORWARD, 6, DistanceUnits.IN)
 
-# ---------------- Driver Control ----------------
+# --- 4. DRIVER CONTROL ---
 def user_control():
-    Drivetrain.set_stopping(BRAKE)
     while True:
         throttle = Controller1.axis3.position()
         steering = Controller1.axis1.position()
@@ -164,5 +108,4 @@ def user_control():
         RightMotor.spin(FORWARD, throttle - steering, PERCENT)
         wait(20, MSEC)
 
-# ---------------- Competition ----------------
 competition = Competition(user_control, autonomous)
