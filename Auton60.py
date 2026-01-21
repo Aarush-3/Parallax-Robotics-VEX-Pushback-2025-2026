@@ -1,156 +1,137 @@
-#region VEXcode Generated Robot Configuration
 from vex import *
-import urandom
 import math
+import urandom
 
-# Brain should be defined by default
-brain=Brain()
+brain = Brain()
 
-# Robot configuration code
+# ---------------- DRIVETRAIN ----------------
 left_motor_a = Motor(Ports.PORT2, GearSetting.RATIO_18_1, False)
 left_motor_b = Motor(Ports.PORT1, GearSetting.RATIO_18_1, False)
-left_drive_smart = MotorGroup(left_motor_a, left_motor_b)
-right_motor_a = Motor(Ports.PORT4, GearSetting.RATIO_18_1, True)
-right_motor_b = Motor(Ports.PORT3, GearSetting.RATIO_18_1, True)
-right_drive_smart = MotorGroup(right_motor_a, right_motor_b)
-drivetrain_inertial = Inertial(Ports.PORT5)
-drivetrain = SmartDrive(left_drive_smart, right_drive_smart, drivetrain_inertial, 319.19, 320, 40, MM, 1)
-distance_6 = Distance(Ports.PORT6)
+left_drive = MotorGroup(left_motor_a, left_motor_b)
 
+right_motor_a = Motor(Ports.PORT3, GearSetting.RATIO_18_1, True)
+right_motor_b = Motor(Ports.PORT4, GearSetting.RATIO_18_1, True)
+right_drive = MotorGroup(right_motor_a, right_motor_b)
 
-# wait for rotation sensor to fully initialize
-wait(30, MSEC)
+inertial = Inertial(Ports.PORT8)
 
+drivetrain = SmartDrive(
+    left_drive,
+    right_drive,
+    inertial,
+    319.19,
+    320,
+    40,
+    MM,
+    1
+)
 
-# Make random actually random
-def initializeRandomSeed():
-    wait(100, MSEC)
-    random = brain.battery.voltage(MV) + brain.battery.current(CurrentUnits.AMP) * 100 + brain.timer.system_high_res()
-    urandom.seed(int(random))
-      
-# Set random seed 
-initializeRandomSeed()
+# ---------------- SENSORS ----------------
+distance_sensor = Distance(Ports.PORT9)
 
-vexcode_initial_drivetrain_calibration_completed = False
-def calibrate_drivetrain():
-    # Calibrate the Drivetrain Inertial
-    global vexcode_initial_drivetrain_calibration_completed
-    sleep(200, MSEC)
-    brain.screen.print("Calibrating")
-    brain.screen.next_row()
-    brain.screen.print("Inertial")
-    drivetrain_inertial.calibrate()
-    while drivetrain_inertial.is_calibrating():
-        sleep(25, MSEC)
-    vexcode_initial_drivetrain_calibration_completed = True
-    brain.screen.clear_screen()
-    brain.screen.set_cursor(1, 1)
+# ---------------- INTAKE + CONVEYOR ----------------
+intake = Motor(Ports.PORT5, GearSetting.RATIO_18_1, False)
+conveyor = Motor(Ports.PORT6, GearSetting.RATIO_18_1, False)  # ← ADDED
 
-
-# Calibrate the Drivetrain
-calibrate_drivetrain()
-
-
-def play_vexcode_sound(sound_name):
-    # Helper to make playing sounds from the V5 in VEXcode easier and
-    # keeps the code cleaner by making it clear what is happening.
-    print("VEXPlaySound:" + sound_name)
-    wait(5, MSEC)
-
-# add a small delay to make sure we don't print in the middle of the REPL header
-wait(200, MSEC)
-# clear the console to make sure we don't have the REPL in the console
-print("\033[2J")
-
-#endregion VEXcode Generated Robot Configuration
-
-# ------------------------------------------
-# 
-# 	Project:      VEXcode Project
-#	Author:       VEX
-#	Created:
-#	Description:  VEXcode V5 Python Project
-# 
-# ------------------------------------------
-
-# Library imports
-from vex import *
-
-# Begin project code
-
-ConveyorBelt = Motor(Ports.PORT3, GearSetting.RATIO_18_1, False)
-IntakeMain = Motor(Ports.PORT4, GearSetting.RATIO_18_1, False)
-
+# ---------------- SETTINGS ----------------
 drivetrain.set_drive_velocity(45, PERCENT)
 drivetrain.set_turn_velocity(35, PERCENT)
-IntakeMain.set_velocity(100, PERCENT)
-ConveyorBelt.set_velocity(85, PERCENT)
 
-CONTAINER_DIST = 120
-GOAL_DIST = 150
+intake.set_velocity(100, PERCENT)
+conveyor.set_velocity(85, PERCENT)
 
+# Field-realistic values
+LOADER_APPROACH_DIST = 140
+GOAL_APPROACH_DIST = 150
+PUSH_DIST = 75
+REVERSE_DIST = 130
+
+
+# ---------------- HELPER FUNCTIONS ----------------
 def drive_until_distance(target_mm, timeout=4):
     brain.timer.reset()
     drivetrain.drive(FORWARD)
-    while distance_6.object_distance(MM) > target_mm and brain.timer.time(SECONDS) < timeout:
+
+    while distance_sensor.object_distance(MM) > target_mm and brain.timer.time(SECONDS) < timeout:
         wait(10, MSEC)
+
     drivetrain.stop()
 
-def collect_balls(time_sec=2):
-    IntakeMain.spin(FORWARD)
-    wait(time_sec, SECONDS)
-    IntakeMain.stop()
 
-def score_balls(time_sec=2):
-    ConveyorBelt.spin(FORWARD)
-    IntakeMain.spin(FORWARD) 
-    wait(time_sec, SECONDS)
-    ConveyorBelt.stop()
-    IntakeMain.stop()
+def load_from_match_loader(intake_time=2.5):
+    # Push into loader
+    drivetrain.drive_for(FORWARD, PUSH_DIST, MM)
 
+    # Intake + conveyor together
+    intake.spin(FORWARD)
+    conveyor.spin(FORWARD)
+    wait(intake_time, SECONDS)
+
+    intake.stop()
+    conveyor.stop()
+
+    # Reverse away cleanly
+    drivetrain.drive_for(REVERSE, REVERSE_DIST, MM)
+
+
+def score_on_tall_goal(time_sec=2.5):
+    # Feed balls upward reliably
+    intake.spin(FORWARD)
+    conveyor.spin(FORWARD)
+    wait(time_sec, SECONDS)
+
+    intake.stop()
+    conveyor.stop()
+
+
+# ---------------- AUTONOMOUS ----------------
 def autonomous():
-    drivetrain_inertial.set_heading(0, DEGREES)
+    inertial.calibrate()
+    while inertial.is_calibrating():
+        wait(25, MSEC)
 
-    # ===== CONTAINER 1 =====
+    inertial.set_heading(0, DEGREES)
+
+    # ===== MATCH LOADER 1 =====
     drivetrain.turn_for(LEFT, 90, DEGREES)
-    drive_until_distance(CONTAINER_DIST)
-    collect_balls(2)
+    drive_until_distance(LOADER_APPROACH_DIST)
+    load_from_match_loader()
 
-    # Go to tall goal
     drivetrain.turn_for(RIGHT, 135, DEGREES)
-    drive_until_distance(GOAL_DIST)
-    score_balls(2)
+    drive_until_distance(GOAL_APPROACH_DIST)
+    score_on_tall_goal()
     drivetrain.drive_for(REVERSE, 300, MM)
 
-    # ===== CONTAINER 2 =====
+    # ===== MATCH LOADER 2 =====
     drivetrain.turn_for(LEFT, 90, DEGREES)
-    drive_until_distance(CONTAINER_DIST)
-    collect_balls(2)
+    drive_until_distance(LOADER_APPROACH_DIST)
+    load_from_match_loader()
 
-    # Go to tall goal
     drivetrain.turn_for(RIGHT, 90, DEGREES)
-    drive_until_distance(GOAL_DIST)
-    score_balls(2)
+    drive_until_distance(GOAL_APPROACH_DIST)
+    score_on_tall_goal()
     drivetrain.drive_for(REVERSE, 300, MM)
 
-    # ===== CONTAINER 3 =====
+    # ===== MATCH LOADER 3 =====
     drivetrain.turn_for(LEFT, 110, DEGREES)
-    drive_until_distance(CONTAINER_DIST)
-    collect_balls(2)
+    drive_until_distance(LOADER_APPROACH_DIST)
+    load_from_match_loader()
 
-    # ===== CONTAINER 4 =====
+    # ===== MATCH LOADER 4 =====
     drivetrain.turn_for(LEFT, 135, DEGREES)
-    drive_until_distance(CONTAINER_DIST)
-    collect_balls(2)
+    drive_until_distance(LOADER_APPROACH_DIST)
+    load_from_match_loader()
 
     drivetrain.turn_for(RIGHT, 135, DEGREES)
-    drive_until_distance(GOAL_DIST)
-    score_balls(3)
+    drive_until_distance(GOAL_APPROACH_DIST)
+    score_on_tall_goal(3)
 
-    # Final tall goal dump
     drivetrain.turn_for(RIGHT, 110, DEGREES)
-    drive_until_distance(GOAL_DIST)
-    score_balls(3)
+    drive_until_distance(GOAL_APPROACH_DIST)
+    score_on_tall_goal(3)
 
-    # Park / back away
     drivetrain.drive_for(REVERSE, 400, MM)
+
+
+# Run autonomous
+autonomous()
