@@ -54,13 +54,13 @@ def user_control():
         else:
             intake_conveyor.stop()
 
-        # ----- TONGUE MECHANISM (L1 / L2) -----
-        if controller.buttonL1.pressing():
-            tongue_mech.spin(FORWARD, MECH_SPEED, PERCENT)
-        elif controller.buttonL2.pressing():
-            tongue_mech.spin(REVERSE, MECH_SPEED, PERCENT)
-        else:
-            tongue_mech.stop()
+        # ----- TONGUE MECHANISM (Button A) -----
+        if (controller.ButtonA.pressing()):
+            tounge_mech.spin_for(FORWARD, 80, DEGREES)
+            while not controller.ButtonA.pressing():
+                pass
+            tounge_mech.spin_for(BACKWARD, 80, DEGREES)
+}
 
         wait(20, MSEC)
 
