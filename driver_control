@@ -57,6 +57,8 @@ def user_control():
         # ----- TONGUE MECHANISM (Button A) -----
         if (controller.ButtonA.pressing()):
             tounge_mech.spin_for(FORWARD, 80, DEGREES)
+            while controller.buttonA.pressing():
+                wait(50, MSEC)
             while not controller.ButtonA.pressing():
                 pass
             tounge_mech.spin_for(BACKWARD, 80, DEGREES)
