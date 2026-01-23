@@ -1,5 +1,5 @@
 from vex import *
-# FINAL DRIVER CONTROL - REFER TO THIS WHILE AS MAIN WHEN MAKING CHANGES - 
+# FINAL DRIVER CONTROL - REFER TO THIS WHILE AS MAIN WHEN MAKING CHANGES - tk
 # ---------------- BRAIN & CONTROLLER ----------------
 brain = Brain()
 controller = Controller()
