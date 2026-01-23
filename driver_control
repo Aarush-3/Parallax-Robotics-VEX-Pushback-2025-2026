@@ -1,0 +1,72 @@
+from vex import *
+# FINAL DRIVER CONTROL - REFER TO THIS WHILE AS MAIN WHEN MAKING CHANGES - 
+# ---------------- BRAIN & CONTROLLER ----------------
+brain = Brain()
+controller = Controller()
+
+# ---------------- DRIVETRAIN ----------------
+left_motor_a = Motor(Ports.PORT2, GearSetting.RATIO_18_1, False)
+left_motor_b = Motor(Ports.PORT1, GearSetting.RATIO_18_1, False)
+left_drive = MotorGroup(left_motor_a, left_motor_b)
+
+right_motor_a = Motor(Ports.PORT3, GearSetting.RATIO_18_1, True)
+right_motor_b = Motor(Ports.PORT4, GearSetting.RATIO_18_1, True)
+right_drive = MotorGroup(right_motor_a, right_motor_b)
+
+drivetrain = DriveTrain(
+    left_drive,
+    right_drive,
+    12.56,   # wheel travel (in)
+    12.5,    # track width (in)
+    DistanceUnits.IN
+)
+
+# ---------------- MECHANISMS ----------------
+intake_conveyor = Motor(Ports.PORT7, GearSetting.RATIO_18_1, False)
+tongue_mech = Motor(Ports.PORT5, GearSetting.RATIO_18_1, False)
+
+# ---------------- SENSORS ----------------
+inertial = Inertial(Ports.PORT8)
+distance_sensor = Distance(Ports.PORT9)
+
+# ---------------- DRIVER CONTROL ----------------
+def user_control():
+    drivetrain.set_stopping(BrakeType.BRAKE)
+    intake_conveyor.set_stopping(BrakeType.HOLD)
+    tongue_mech.set_stopping(BrakeType.HOLD)
+
+    DRIVE_SPEED = 100
+    MECH_SPEED = 100
+
+    while True:
+        # ----- ARCADE DRIVE -----
+        throttle = controller.axis3.position()
+        steering = controller.axis1.position()
+
+        left_drive.spin(FORWARD, throttle + steering, PERCENT)
+        right_drive.spin(FORWARD, throttle - steering, PERCENT)
+
+        # ----- INTAKE + CONVEYOR (R1 / R2) -----
+        if controller.buttonR1.pressing():
+            intake_conveyor.spin(FORWARD, MECH_SPEED, PERCENT)
+        elif controller.buttonR2.pressing():
+            intake_conveyor.spin(REVERSE, MECH_SPEED, PERCENT)
+        else:
+            intake_conveyor.stop()
+
+        # ----- TONGUE MECHANISM (L1 / L2) -----
+        if controller.buttonL1.pressing():
+            tongue_mech.spin(FORWARD, MECH_SPEED, PERCENT)
+        elif controller.buttonL2.pressing():
+            tongue_mech.spin(REVERSE, MECH_SPEED, PERCENT)
+        else:
+            tongue_mech.stop()
+
+        wait(20, MSEC)
+
+# ---------------- AUTON PLACEHOLDER ----------------
+def autonomous():
+    pass
+
+# ---------------- COMPETITION ----------------
+competition = Competition(user_control, autonomous)
