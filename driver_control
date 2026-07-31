@@ -21,14 +21,6 @@ drivetrain = DriveTrain(
     DistanceUnits.IN
 )
 
-# ---------------- MECHANISMS ----------------
-intake_conveyor = Motor(Ports.PORT7, GearSetting.RATIO_18_1, False)
-tongue_mech = Motor(Ports.PORT5, GearSetting.RATIO_18_1, False)
-
-# ---------------- SENSORS ----------------
-inertial = Inertial(Ports.PORT8)
-distance_sensor = Distance(Ports.PORT9)
-
 # ---------------- DRIVER CONTROL ----------------
 def user_control():
     drivetrain.set_stopping(BrakeType.BRAKE)
