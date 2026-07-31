@@ -5,12 +5,12 @@ brain = Brain()
 controller = Controller()
 
 # ---------------- DRIVETRAIN ----------------
-left_motor_a = Motor(Ports.PORT2, GearSetting.RATIO_18_1, False)
-left_motor_b = Motor(Ports.PORT1, GearSetting.RATIO_18_1, False)
+left_motor_a = Motor(Ports.PORT11, GearSetting.RATIO_18_1, False)
+left_motor_b = Motor(Ports.PORT12, GearSetting.RATIO_18_1, False)
 left_drive = MotorGroup(left_motor_a, left_motor_b)
 
-right_motor_a = Motor(Ports.PORT3, GearSetting.RATIO_18_1, True)
-right_motor_b = Motor(Ports.PORT4, GearSetting.RATIO_18_1, True)
+right_motor_a = Motor(Ports.PORT13, GearSetting.RATIO_18_1, True)
+right_motor_b = Motor(Ports.PORT14, GearSetting.RATIO_18_1, True)
 right_drive = MotorGroup(right_motor_a, right_motor_b)
 
 drivetrain = DriveTrain(
