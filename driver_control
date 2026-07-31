@@ -24,8 +24,6 @@ drivetrain = DriveTrain(
 # ---------------- DRIVER CONTROL ----------------
 def user_control():
     drivetrain.set_stopping(BrakeType.BRAKE)
-    intake_conveyor.set_stopping(BrakeType.HOLD)
-    tongue_mech.set_stopping(BrakeType.HOLD)
 
     DRIVE_SPEED = 100
     MECH_SPEED = 100
@@ -38,23 +36,7 @@ def user_control():
         left_drive.spin(FORWARD, throttle + steering, PERCENT)
         right_drive.spin(FORWARD, throttle - steering, PERCENT)
 
-        # ----- INTAKE + CONVEYOR (R1 / R2) -----
-        if controller.buttonR1.pressing():
-            intake_conveyor.spin(FORWARD, MECH_SPEED, PERCENT)
-        elif controller.buttonR2.pressing():
-            intake_conveyor.spin(REVERSE, MECH_SPEED, PERCENT)
-        else:
-            intake_conveyor.stop()
-
-        # ----- TONGUE MECHANISM (Button A) -----
-        if (controller.ButtonA.pressing()):
-            tounge_mech.spin_for(FORWARD, 80, DEGREES)
-            while controller.buttonA.pressing():
-                wait(50, MSEC)
-            while not controller.ButtonA.pressing():
-                pass
-            tounge_mech.spin_for(BACKWARD, 80, DEGREES)
-}
+       
 
         wait(20, MSEC)
 
