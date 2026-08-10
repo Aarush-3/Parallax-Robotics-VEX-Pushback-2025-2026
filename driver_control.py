@@ -46,32 +46,48 @@ DEADBAND  = 5       # ignore joystick noise below this percent
 TURN_GAIN = 1.0     # raise toward 1.5 for sharper turning
 
 # ---- Lift: protection ----
-# Torque cap is the single most important protection at 1:1.
-# It limits current so the motors can't sit at stall current.
-# Raise in steps of 10 only if the lift genuinely cannot get
-# off the ground with good rubber bands.
-MAX_TORQUE_PCT = 50
+# Torque cap limits current so the motors can't sit at stall
+# current. At 1:1 with a banded DR4B this needs to be high
+# enough to actually break the arm loose from rest -- 50 was
+# not, which is why L1 did nothing. Lower in steps of 10 only
+# if the motors run hot.
+MAX_TORQUE_PCT = 75
 
 # ---- Lift: soft limits (motor degrees; at 1:1 = arm degrees)
-LIFT_MIN_DEG = 45      # tolerance below the homed zero
+# MIN must be at or below the homed zero, or the down button is
+# dead everywhere below it.
+LIFT_MIN_DEG = -5       # tolerance below the homed zero
 LIFT_MAX_DEG = 135      # <-- MEASURE AND REPLACE (see bottom)
 
 # ---- Lift: speeds ----
 UP_PCT   = 100          # effectively capped by MAX_TORQUE_PCT
 DOWN_PCT = 40           # gravity helps; don't slam the bottom
-HOLD_PCT = 10           # gentle trim to resist droop
-HOLD_THRESHOLD_DEG = 15 # above this height, apply HOLD_PCT
+
+# ---- Lift: position hold ----
+# The lift holds whatever height you release it at, by driving
+# back to a remembered setpoint. This is what makes it stay
+# level with nobody touching it -- a fixed trim percentage
+# cannot do that, because the power needed to hold changes
+# with arm angle and band tension.
+HOLD_KP        = 1.4    # percent power per degree of sag
+HOLD_KD        = 6.0    # damping; raise if it oscillates
+HOLD_MAX_PCT   = 45     # ceiling on hold effort
+HOLD_DEADBAND_DEG = 1.5 # don't fight sensor noise
+HOLD_THRESHOLD_DEG = 15 # below this, rest on the stop instead
 
 # ---- Lift: smoothing ----
-SLEW_PER_LOOP = 6       # max percent change per 20 ms loop
+SLEW_PER_LOOP = 12      # max percent change per 20 ms loop
 
 # ---- Lift: thermal guard (Celsius) ----
 TEMP_CUTOFF_C = 50      # V5 motors self-limit near 55C
 TEMP_RESUME_C = 45
 
 # ---- Lift: stall detection ----
+# Only armed while the driver is actually holding a button AND
+# real power is already applied, so the slew ramp can't be
+# mistaken for a stall.
 STALL_VEL_RPM = 5
-STALL_MS      = 350
+STALL_MS      = 500
 
 # ---- Lift: homing ----
 HOMING_PCT        = 25    # gentle downward power while homing
@@ -90,6 +106,8 @@ SCREEN_UPDATE_MS = 250
 #  STATE
 # ============================================================
 lift_cmd     = 0.0      # command actually being applied
+hold_target  = 0.0      # height the lift is trying to keep (deg)
+hold_prev_err = 0.0     # previous hold error, for damping
 stall_timer  = 0        # ms spent stalled
 thermal_lock = False    # True = lift disabled, too hot
 is_homed     = False    # has the lift found its bottom yet
@@ -113,7 +131,8 @@ def clamp(v, lo, hi):
 #  remember to rest it down before running the program.
 # ============================================================
 def lift_home():
-    global lift_cmd, stall_timer, thermal_lock, is_homed
+    global lift_cmd, hold_target, hold_prev_err
+    global stall_timer, thermal_lock, is_homed
 
     lift.set_stopping(BRAKE)
     lift.set_max_torque(HOMING_TORQUE_PCT, PERCENT)
@@ -146,10 +165,12 @@ def lift_home():
 
     # restore normal operating limits
     lift.set_max_torque(MAX_TORQUE_PCT, PERCENT)
-    lift_cmd     = 0.0
-    stall_timer  = 0
-    thermal_lock = False
-    is_homed     = True
+    lift_cmd      = 0.0
+    hold_target   = 0.0
+    hold_prev_err = 0.0
+    stall_timer   = 0
+    thermal_lock  = False
+    is_homed      = True
 
     controller.screen.set_cursor(1, 1)
     controller.screen.print("LIFT READY        ")
@@ -167,8 +188,25 @@ def ensure_homed():
 # ============================================================
 #  LIFT CONTROL  -- called every loop
 # ============================================================
+def hold_power(pos):
+    # Closed-loop trim that drives the arm back to hold_target.
+    # Returns a percent command, positive = push up.
+    global hold_prev_err
+
+    err = hold_target - pos
+    if abs(err) < HOLD_DEADBAND_DEG:
+        err = 0.0
+
+    d = err - hold_prev_err
+    hold_prev_err = err
+
+    return clamp(HOLD_KP * err + HOLD_KD * d,
+                 -HOLD_MAX_PCT, HOLD_MAX_PCT)
+
+
 def lift_control():
-    global lift_cmd, stall_timer, thermal_lock, screen_timer
+    global lift_cmd, hold_target, hold_prev_err
+    global stall_timer, thermal_lock, screen_timer
 
     # --- manual re-home: hold B + DOWN ---
     # Use if the lift gets out of sync mid-practice (someone
@@ -188,28 +226,43 @@ def lift_control():
     if thermal_lock and temp <= TEMP_RESUME_C:
         thermal_lock = False
 
+    up   = controller.buttonL1.pressing()
+    down = controller.buttonL2.pressing()
+    driving = False
+
     # --- decide target command ---
     if thermal_lock:
         target = 0                                  # let it cool
-    elif controller.buttonL1.pressing() and pos < LIFT_MAX_DEG:
+        hold_target = pos
+    elif up and pos < LIFT_MAX_DEG:
         target = UP_PCT
-    elif controller.buttonL2.pressing() and pos > LIFT_MIN_DEG:
+        hold_target = pos      # setpoint follows the arm...
+        driving = True
+    elif down and pos > LIFT_MIN_DEG:
         target = -DOWN_PCT
-    elif pos > HOLD_THRESHOLD_DEG:
-        target = HOLD_PCT
+        hold_target = pos      # ...so release captures the height
+        driving = True
+    elif pos > HOLD_THRESHOLD_DEG or hold_target > HOLD_THRESHOLD_DEG:
+        target = hold_power(pos)
     else:
-        target = 0
+        target = 0             # resting on the bottom stop
+        hold_target = pos
 
     # --- stall protection ---
-    # If we command real power and nothing moves, stop pushing.
-    # This is what saves the motors and the gear teeth.
-    if abs(target) > 20 and vel < STALL_VEL_RPM:
+    # Only counts while the driver is holding a button and real
+    # power is already on the motors, so the slew ramp is not
+    # mistaken for a stall. Counting the ramp is what made the
+    # lift give up before it ever moved.
+    if driving and abs(lift_cmd) > 40 and vel < STALL_VEL_RPM:
         stall_timer += 20
     else:
         stall_timer = 0
 
     if stall_timer > STALL_MS:
-        target = clamp(target, -HOLD_PCT, HOLD_PCT)
+        # Something is in the way or we are against a hard stop.
+        # Quit pushing, but keep the arm where it is.
+        hold_target = pos
+        target = hold_power(pos)
 
     # --- slew limiting (no instant current spikes) ---
     if target > lift_cmd:
@@ -218,7 +271,16 @@ def lift_control():
         lift_cmd = max(target, lift_cmd - SLEW_PER_LOOP)
 
     # --- apply ---
+    # Stopping mode matters as much as the command here. Above
+    # the bottom stop we stop in HOLD, so the motor's own
+    # position loop pins the arm between trim corrections
+    # instead of letting it creep down. Resting on the stop we
+    # use BRAKE, so it is not fighting the frame all match.
     if abs(lift_cmd) < 2.0:
+        if pos > HOLD_THRESHOLD_DEG:
+            lift.set_stopping(HOLD)
+        else:
+            lift.set_stopping(BRAKE)
         lift.stop()
     else:
         lift.spin(FORWARD, lift_cmd, PERCENT)
@@ -319,4 +381,14 @@ competition = Competition(user_control, autonomous)
 #
 #  Watch the temperature readout while driving. Past 40C in
 #  normal use means the bands are not carrying enough load.
+#
+#  TUNING THE HOLD:
+#  Band the arm first -- the hold loop is trim, not a crane.
+#  Then, with the arm at mid height, let go of both buttons:
+#    - sags slowly downward  -> raise HOLD_KP by 0.4
+#    - bounces or buzzes     -> raise HOLD_KD by 2, or drop
+#                               HOLD_KP by 0.4
+#    - drifts a degree or two and settles -> correct, leave it
+#  If it holds at mid height but sags with a block at full
+#  extension, raise HOLD_MAX_PCT before touching HOLD_KP.
 # ============================================================
