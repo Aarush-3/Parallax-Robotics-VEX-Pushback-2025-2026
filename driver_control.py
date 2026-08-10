@@ -47,11 +47,12 @@ TURN_GAIN = 1.0     # raise toward 1.5 for sharper turning
 
 # ---- Lift: protection ----
 # Torque cap limits current so the motors can't sit at stall
-# current. At 1:1 with a banded DR4B this needs to be high
-# enough to actually break the arm loose from rest -- 50 was
-# not, which is why L1 did nothing. Lower in steps of 10 only
-# if the motors run hot.
-MAX_TORQUE_PCT = 75
+# current. At 1:1 a banded DR4B needs everything the motors
+# have just to break loose from rest, so this is uncapped and
+# the thermal guard plus stall timer do the protecting instead.
+# If the motors run hot in normal use, the answer is more
+# rubber band, not a lower number here.
+MAX_TORQUE_PCT = 100
 
 # ---- Lift: soft limits (motor degrees; at 1:1 = arm degrees)
 # MIN must be at or below the homed zero, or the down button is
@@ -179,6 +180,61 @@ def lift_home():
     controller.screen.print("LIFT READY        ")
 
 
+# ============================================================
+#  LIFT DIAGNOSTIC  -- hold B + UP
+#
+#  Spins each lift motor ALONE at low power and reports the
+#  direction each one actually turns. On a mirrored gear train
+#  both must read the SAME SIGN here -- that is the whole point
+#  of the reverse flag on lift_right.
+#
+#  Opposite signs = the motors are fighting each other. Net
+#  torque is near zero and both draw stall current, which feels
+#  exactly like "the lift is underpowered." Fix it by flipping
+#  ONE of the booleans at the top of this file, not by raising
+#  torque.
+# ============================================================
+def lift_diagnostic():
+    lift.stop()
+    lift.set_max_torque(40, PERCENT)
+
+    controller.screen.clear_screen()
+    controller.screen.set_cursor(1, 1)
+    controller.screen.print("DIAG: hands clear ")
+    wait(1000, MSEC)
+
+    results = []
+    for name, motor in (("L", lift_left), ("R", lift_right)):
+        motor.spin(FORWARD, 25, PERCENT)
+        wait(400, MSEC)
+        v = motor.velocity(RPM)
+        motor.stop()
+        wait(300, MSEC)
+        results.append((name, v))
+
+    lift.set_max_torque(MAX_TORQUE_PCT, PERCENT)
+
+    lv = results[0][1]
+    rv = results[1][1]
+
+    controller.screen.clear_screen()
+    controller.screen.set_cursor(1, 1)
+    controller.screen.print("L{:>4.0f}  R{:>4.0f}   ".format(lv, rv))
+    controller.screen.set_cursor(2, 1)
+
+    # Same sign = wired correctly. Either one reading near zero
+    # means that motor is dead, unplugged, or on a wrong port.
+    if abs(lv) < 5 or abs(rv) < 5:
+        controller.screen.print("DEAD MOTOR!     ")
+    elif (lv > 0) == (rv > 0):
+        controller.screen.print("OK - same dir   ")
+    else:
+        controller.screen.print("FIGHTING! flip  ")
+
+    wait(4000, MSEC)
+    controller.screen.clear_screen()
+
+
 def ensure_homed():
     # Homes only once per power cycle. Called at the start of
     # BOTH autonomous and driver control, because on a real
@@ -216,6 +272,11 @@ def lift_control():
     # moved it by hand, a shaft slipped, etc).
     if controller.buttonB.pressing() and controller.buttonDown.pressing():
         lift_home()
+        return
+
+    # --- motor direction diagnostic: hold B + UP ---
+    if controller.buttonB.pressing() and controller.buttonUp.pressing():
+        lift_diagnostic()
         return
 
     pos  = lift.position(DEGREES)
