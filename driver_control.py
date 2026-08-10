@@ -80,6 +80,13 @@ HOLD_THRESHOLD_DEG = 15 # below this, rest on the stop instead
 SLEW_PER_LOOP = 12      # max percent change per 20 ms loop
 
 # ---- Lift: thermal guard (Celsius) ----
+# DISABLED at driver request while chasing a no-move problem.
+# Set back to True once the lift actually lifts. Note the V5
+# firmware still derates the motors on its own near 55C, so
+# with this off you get no warning before that happens -- the
+# lift just quietly goes weak. Temperature is still shown on
+# the controller screen; watch it.
+THERMAL_GUARD = False
 TEMP_CUTOFF_C = 50      # V5 motors self-limit near 55C
 TEMP_RESUME_C = 45
 
@@ -87,6 +94,12 @@ TEMP_RESUME_C = 45
 # Only armed while the driver is actually holding a button AND
 # real power is already applied, so the slew ramp can't be
 # mistaken for a stall.
+# Left ON. This is the guard most likely to look like "the
+# lift won't move" -- it gives up after half a second of no
+# motion. To rule it out, set False for ONE brief test only,
+# then put it back. With it off, a jammed lift will happily
+# cook both motors.
+STALL_GUARD   = True
 STALL_VEL_RPM = 5
 STALL_MS      = 500
 # Must stay below DOWN_PCT, or a jam while lowering is never
@@ -285,10 +298,13 @@ def lift_control():
                lift_right.temperature(TemperatureUnits.CELSIUS))
 
     # --- thermal guard (hysteresis so it doesn't chatter) ---
-    if temp >= TEMP_CUTOFF_C:
-        thermal_lock = True
-    if thermal_lock and temp <= TEMP_RESUME_C:
+    if not THERMAL_GUARD:
         thermal_lock = False
+    else:
+        if temp >= TEMP_CUTOFF_C:
+            thermal_lock = True
+        if thermal_lock and temp <= TEMP_RESUME_C:
+            thermal_lock = False
 
     up   = controller.buttonL1.pressing()
     down = controller.buttonL2.pressing()
@@ -317,7 +333,8 @@ def lift_control():
     # power is already on the motors, so the slew ramp is not
     # mistaken for a stall. Counting the ramp is what made the
     # lift give up before it ever moved.
-    if driving and abs(lift_cmd) > STALL_ARM_PCT and vel < STALL_VEL_RPM:
+    if (STALL_GUARD and driving
+            and abs(lift_cmd) > STALL_ARM_PCT and vel < STALL_VEL_RPM):
         stall_timer += 20
     else:
         stall_timer = 0
