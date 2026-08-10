@@ -53,7 +53,7 @@ TURN_GAIN = 1.0     # raise toward 1.5 for sharper turning
 MAX_TORQUE_PCT = 50
 
 # ---- Lift: soft limits (motor degrees; at 1:1 = arm degrees)
-LIFT_MIN_DEG = -15      # tolerance below the homed zero
+LIFT_MIN_DEG = 45      # tolerance below the homed zero
 LIFT_MAX_DEG = 135      # <-- MEASURE AND REPLACE (see bottom)
 
 # ---- Lift: speeds ----
