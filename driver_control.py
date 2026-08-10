@@ -88,6 +88,9 @@ TEMP_RESUME_C = 45
 # mistaken for a stall.
 STALL_VEL_RPM = 5
 STALL_MS      = 500
+# Must stay below DOWN_PCT, or a jam while lowering is never
+# detected -- the command never exceeds the threshold.
+STALL_ARM_PCT = 30
 
 # ---- Lift: homing ----
 HOMING_PCT        = 25    # gentle downward power while homing
@@ -253,7 +256,7 @@ def lift_control():
     # power is already on the motors, so the slew ramp is not
     # mistaken for a stall. Counting the ramp is what made the
     # lift give up before it ever moved.
-    if driving and abs(lift_cmd) > 40 and vel < STALL_VEL_RPM:
+    if driving and abs(lift_cmd) > STALL_ARM_PCT and vel < STALL_VEL_RPM:
         stall_timer += 20
     else:
         stall_timer = 0
@@ -277,7 +280,10 @@ def lift_control():
     # instead of letting it creep down. Resting on the stop we
     # use BRAKE, so it is not fighting the frame all match.
     if abs(lift_cmd) < 2.0:
-        if pos > HOLD_THRESHOLD_DEG:
+        # Overheated: BRAKE, not HOLD. HOLD keeps the motor
+        # energized against gravity, so the arm would never
+        # actually cool down -- the guard would defeat itself.
+        if pos > HOLD_THRESHOLD_DEG and not thermal_lock:
             lift.set_stopping(HOLD)
         else:
             lift.set_stopping(BRAKE)
