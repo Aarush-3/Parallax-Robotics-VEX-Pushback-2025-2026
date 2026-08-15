@@ -72,7 +72,7 @@ DOWN_PCT = 40           # gravity helps; don't slam the bottom
 # with arm angle and band tension.
 HOLD_KP        = 1.4    # percent power per degree of sag
 HOLD_KD        = 6.0    # damping; raise if it oscillates
-HOLD_MAX_PCT   = 45     # ceiling on hold effort
+HOLD_MAX_PCT = 85     # ceiling on hold effort
 HOLD_DEADBAND_DEG = 1.5 # don't fight sensor noise
 HOLD_THRESHOLD_DEG = 15 # below this, rest on the stop instead
 
@@ -100,8 +100,8 @@ TEMP_RESUME_C = 45
 # then put it back. With it off, a jammed lift will happily
 # cook both motors.
 STALL_GUARD   = True
-STALL_VEL_RPM = 5
-STALL_MS      = 500
+STALL_VEL_RPM = 2
+STALL_MS      = 1200
 # Must stay below DOWN_PCT, or a jam while lowering is never
 # detected -- the command never exceeds the threshold.
 STALL_ARM_PCT = 30
