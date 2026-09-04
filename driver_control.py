@@ -16,11 +16,10 @@
 
 from vex import *
 
-# ---------------- BRAIN & CONTROLLER ----------------
 brain = Brain()
 controller = Controller()
 
-# ---------------- DRIVETRAIN MOTORS ----------------
+# drive train motors
 left_motor_a = Motor(Ports.PORT11, GearSetting.RATIO_18_1, True)
 left_motor_b = Motor(Ports.PORT12, GearSetting.RATIO_18_1, True)
 left_drive = MotorGroup(left_motor_a, left_motor_b)
@@ -29,9 +28,7 @@ right_motor_a = Motor(Ports.PORT13, GearSetting.RATIO_18_1, False)
 right_motor_b = Motor(Ports.PORT14, GearSetting.RATIO_18_1, False)
 right_drive = MotorGroup(right_motor_a, right_motor_b)
 
-# ---------------- LIFT MOTORS ----------------
-# The "True" on the right motor reverses it. If the lift goes
-# DOWN when you press L1, flip these booleans.
+# lift motors
 lift_left  = Motor(Ports.PORT10, GearSetting.RATIO_18_1, False)
 lift_right = Motor(Ports.PORT9,  GearSetting.RATIO_18_1, True)
 lift = MotorGroup(lift_left, lift_right)
@@ -165,8 +162,8 @@ def lift_home():
         wait(20, MSEC)
         elapsed += 20
 
-        # Give it a moment to start moving before judging it
-        # stopped, or it "finds" the bottom instantly.
+        # Give it a moment to start moving before judging it as being 
+        # stopped, or it "finds" the bottom instantly by uitself
         if elapsed < HOMING_GRACE_MS:
             continue
 
@@ -180,7 +177,7 @@ def lift_home():
     lift.stop()
     lift.set_position(0, DEGREES)
 
-    # restore normal operating limits
+
     lift.set_max_torque(MAX_TORQUE_PCT, PERCENT)
     lift_cmd      = 0.0
     hold_target   = 0.0
@@ -234,15 +231,13 @@ def lift_diagnostic():
     controller.screen.set_cursor(1, 1)
     controller.screen.print("L{:>4.0f}  R{:>4.0f}   ".format(lv, rv))
     controller.screen.set_cursor(2, 1)
-
-    # Same sign = wired correctly. Either one reading near zero
-    # means that motor is dead, unplugged, or on a wrong port.
+  
     if abs(lv) < 5 or abs(rv) < 5:
-        controller.screen.print("DEAD MOTOR!     ")
+        controller.screen.print("motor is dead!     ")
     elif (lv > 0) == (rv > 0):
         controller.screen.print("OK - same dir   ")
     else:
-        controller.screen.print("FIGHTING! flip  ")
+        controller.screen.print("motors are colliding  ")
 
     wait(4000, MSEC)
     controller.screen.clear_screen()
@@ -261,8 +256,6 @@ def ensure_homed():
 #  LIFT CONTROL  -- called every loop
 # ============================================================
 def hold_power(pos):
-    # Closed-loop trim that drives the arm back to hold_target.
-    # Returns a percent command, positive = push up.
     global hold_prev_err
 
     err = hold_target - pos
@@ -388,8 +381,7 @@ def drive_control():
     throttle = controller.axis3.position()
     steering = controller.axis1.position()
 
-    # Deadband: joysticks rarely read exactly zero at rest.
-    # Without this the robot creeps and the motors buzz.
+    # deadband
     if abs(throttle) < DEADBAND:
         throttle = 0
     if abs(steering) < DEADBAND:
@@ -398,9 +390,7 @@ def drive_control():
     left_power  = throttle + (steering * TURN_GAIN)
     right_power = throttle - (steering * TURN_GAIN)
 
-    # Scale both sides down together if either exceeds 100.
-    # Plain clipping would cost you steering authority at full
-    # throttle -- the robot stops turning when you need it most.
+    # Scale both sides down together if either exceeds 100
     biggest = max(abs(left_power), abs(right_power))
     if biggest > 100:
         left_power  = left_power  * 100 / biggest
